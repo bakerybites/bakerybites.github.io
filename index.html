@@ -47,7 +47,11 @@
   section h2{font-size:26px;margin:0 0 6px;text-transform:uppercase}
   .sizes,.item{display:grid;grid-template-columns:1fr auto;gap:0 10px;align-items:baseline}
   .sizes{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:2px 0 4px;border-bottom:1px solid var(--line)}
-  .prices{display:grid;grid-auto-flow:column;gap:0 6px;text-align:right}
+  .prices{display:grid;grid-auto-flow:column;grid-template-columns:repeat(var(--n,1),4.6rem);gap:0 6px;text-align:right}
+  .sizes.unico{margin-top:14px}
+  .adi{display:flex;align-items:baseline;padding:5px 0;font-size:15px}
+  .adi .lead{flex:1;min-width:16px;border-bottom:2px dotted var(--line);margin:0 8px;transform:translateY(-4px)}
+  .adic h2{font-size:22px}
   .prices span{white-space:nowrap}
   .item{padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer;-webkit-tap-highlight-color:transparent}
   .item:last-child{border-bottom:0}
@@ -105,7 +109,6 @@ function parseCSV(text) {
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const precio = n => '$ ' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-const sizeNum = s => parseFloat(s) || 0;
 const slug = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 function elegirSede() {
@@ -142,7 +145,7 @@ function agrupar(rows, sede) {
     if (!p) return;
     const cat = r.categoria_menu || 'Otros';
     const orden = parseFloat(r.orden); const o = isNaN(orden) ? 9999 : orden;
-    if (!cats.has(cat)) cats.set(cat, { nombre: cat, orden: o, items: new Map() });
+    if (!cats.has(cat)) cats.set(cat, { nombre: cat, orden: o, items: new Map(), ov: new Map() });
     const C = cats.get(cat); C.orden = Math.min(C.orden, o);
     const key = r.nombre_menu.toLowerCase();
     if (!C.items.has(key)) C.items.set(key, {
@@ -153,13 +156,25 @@ function agrupar(rows, sede) {
     const it = C.items.get(key); it.orden = Math.min(it.orden, o);
     if (/^s[ií]$/i.test(r.destacado)) it.destacado = true;
     it.precios.push({ tamano: r.tamano, precio: p });
+    if (r.tamano) {
+      const ov = parseFloat(r.orden_variante);
+      if (!isNaN(ov)) C.ov.set(r.tamano, Math.min(C.ov.get(r.tamano) ?? ov, ov));
+    }
   });
-  return [...cats.values()].sort((a, b) => a.orden - b.orden).map(c => {
+  const esAdic = n => slug(n) === 'adiciones';
+  const lista = [...cats.values()].sort((a, b) => (esAdic(a.nombre) - esAdic(b.nombre)) || (a.orden - b.orden));
+  return lista.map(c => {
+    // Variantes: orden_variante → número del tamaño (9 oz) → alfabético
+    const cmp = (a, b) => {
+      const oa = c.ov.get(a), ob = c.ov.get(b);
+      if (oa != null || ob != null) return oa == null ? 1 : ob == null ? -1 : oa - ob;
+      const na = parseFloat(a), nb = parseFloat(b);
+      if (!isNaN(na) || !isNaN(nb)) return isNaN(na) ? 1 : isNaN(nb) ? -1 : na - nb;
+      return a.localeCompare(b, 'es');
+    };
     const items = [...c.items.values()].sort((a, b) => a.orden - b.orden);
-    items.forEach(i => i.precios.sort((a, b) => sizeNum(a.tamano) - sizeNum(b.tamano)));
-    const tams = [...new Set(items.filter(i => i.precios.length > 1 || i.precios[0].tamano).flatMap(i => i.precios.map(p => p.tamano)).filter(Boolean))]
-      .sort((a, b) => sizeNum(a) - sizeNum(b));
-    return { nombre: c.nombre, id: 'c-' + slug(c.nombre), items, tams };
+    items.forEach(i => i.precios.sort((a, b) => cmp(a.tamano, b.tamano)));
+    return { nombre: c.nombre, id: 'c-' + slug(c.nombre), items, cmp, adic: esAdic(c.nombre) };
   });
 }
 
@@ -167,7 +182,7 @@ const icono = t => `<span class="ic" tabindex="0" role="button" data-tip="${ETQ[
 function itemHTML(it, tams) {
   let pr;
   if (tams.length && it.precios.some(p => p.tamano)) {
-    pr = `<div class="prices" style="grid-template-columns:repeat(${tams.length},4.6em)">` +
+    pr = `<div class="prices" style="--n:${tams.length}">` +
       tams.map(t => { const p = it.precios.find(x => x.tamano === t); return `<span class="price">${p ? precio(p.precio) : '—'}</span>`; }).join('') + `</div>`;
   } else {
     pr = `<span class="price">${precio(it.precios[0].precio)}</span>`;
@@ -180,14 +195,14 @@ function itemHTML(it, tams) {
 
 function pintar(cats, sede, aviso) {
   const activos = new Set(); let fijo = null;
-  const dest = cats.flatMap(c => c.items).find(i => i.destacado);
+  const dest = cats.filter(c => !c.adic).flatMap(c => c.items).find(i => i.destacado);
   document.title = `Menú · Bakery Bites ${SEDES[sede]}`;
   app.innerHTML =
     `<header><h1>BAKERY BITES</h1><p class="sede">${SEDES[sede]}<a href="./">Cambiar sede</a></p></header>` +
     (aviso ? `<div class="aviso">${esc(aviso)}</div>` : '') +
     (dest ? `<div class="destacado"><div class="k">Destacado</div><h2>${esc(dest.nombre)}</h2>` +
       (dest.desc ? `<p>${esc(dest.desc)}</p>` : '') +
-      `<div class="p">${dest.precios.map(p => (p.tamano ? esc(p.tamano) + ' ' : '') + precio(p.precio)).join(' · ')}</div></div>` : '') +
+      `<div class="p">${dest.precios.map(p => `<span style="white-space:nowrap">${(p.tamano ? esc(p.tamano) + ' ' : '') + precio(p.precio)}</span>`).join(' · ')}</div></div>` : '') +
     `<div class="chips" role="group" aria-label="Filtros">${Object.entries(ETQ).map(([k, v]) => `<button class="chip" data-t="${k}" aria-pressed="false"><span class="ic">${k}</span>${v}</button>`).join('')}</div>` +
     `<nav><div class="scroll" id="nav"></div></nav><main id="secs"></main>` +
     `<footer>Precios incluyen impoconsumo</footer>`;
@@ -196,13 +211,22 @@ function pintar(cats, sede, aviso) {
   function render() {
     let html = '', links = '';
     cats.forEach(c => {
-      const items = c.items.filter(i => [...activos].every(t => i.tags.includes(t)));
+      const items = c.adic ? c.items : c.items.filter(i => [...activos].every(t => i.tags.includes(t)));
       if (!items.length) return;
-      const tams = items.some(i => i.precios.some(p => p.tamano)) ? c.tams : [];
       links += `<a href="#${c.id}" data-id="${c.id}">${esc(c.nombre)}</a>`;
+      if (c.adic) {
+        html += `<section id="${c.id}" class="adic"><h2>${esc(c.nombre)}</h2>` +
+          items.map(i => `<div class="adi"><span>${esc(i.nombre)}</span><span class="lead"></span><span class="price">+${precio(i.precios[0].precio)}</span></div>`).join('') + `</section>`;
+        return;
+      }
+      const conVar = items.filter(i => i.precios.some(p => p.tamano));
+      const tams = [...new Set(conVar.flatMap(i => i.precios.map(p => p.tamano)).filter(Boolean))].sort(c.cmp);
+      const unicos = tams.length ? items.filter(i => !conVar.includes(i)) : [];
       html += `<section id="${c.id}"><h2>${esc(c.nombre)}</h2>` +
-        (tams.length ? `<div class="sizes"><span></span><div class="prices" style="grid-template-columns:repeat(${tams.length},4.6em)">${tams.map(t => `<span>${esc(t)}</span>`).join('')}</div></div>` : '') +
-        items.map(i => itemHTML(i, tams)).join('') + `</section>`;
+        (tams.length ? `<div class="sizes"><span></span><div class="prices" style="--n:${tams.length}">${tams.map(t => `<span>${esc(t)}</span>`).join('')}</div></div>` +
+          conVar.map(i => itemHTML(i, tams)).join('') +
+          (unicos.length ? `<div class="sizes unico"><span>Precio único</span></div>` + unicos.map(i => itemHTML(i, [])).join('') : '')
+        : items.map(i => itemHTML(i, [])).join('')) + `</section>`;
     });
     nav.innerHTML = links;
     secs.innerHTML = html || `<p class="vacio">No hay productos con esos filtros.</p>`;
