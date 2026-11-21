@@ -108,7 +108,7 @@ function parseCSV(text) {
 }
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const precio = n => '$ ' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const precio = n => n < 1000 ? '$' + n : '$' + String(Math.round(n / 10) / 100).replace('.', ',') + 'K';
 const slug = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 function elegirSede() {
@@ -205,7 +205,7 @@ function pintar(cats, sede, aviso) {
       `<div class="p">${dest.precios.map(p => `<span style="white-space:nowrap">${(p.tamano ? esc(p.tamano) + ' ' : '') + precio(p.precio)}</span>`).join(' · ')}</div></div>` : '') +
     `<div class="chips" role="group" aria-label="Filtros">${Object.entries(ETQ).map(([k, v]) => `<button class="chip" data-t="${k}" aria-pressed="false"><span class="ic">${k}</span>${v}</button>`).join('')}</div>` +
     `<nav><div class="scroll" id="nav"></div></nav><main id="secs"></main>` +
-    `<footer>Precios incluyen impoconsumo</footer>`;
+    `<footer>Precios incluyen impoconsumo · K = miles de pesos</footer>`;
 
   const nav = document.getElementById('nav'), secs = document.getElementById('secs');
   function render() {
