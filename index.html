@@ -35,6 +35,15 @@
   .destacado h2{font-size:24px;line-height:1.1;margin:4px 0 4px}
   .destacado p{margin:0 0 8px;opacity:.9;font-size:14px}
   .destacado .p{font-weight:600;font-size:18px;color:var(--gold)}
+  .destacado{cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:pan-y}
+  .dst-track{display:grid}
+  .dst-slide{grid-area:1/1;opacity:0;visibility:hidden;transition:opacity .5s ease,visibility .5s}
+  .dst-slide.on{opacity:1;visibility:visible}
+  .dots{display:flex;justify-content:center;gap:4px;margin:6px 0 -8px}
+  .dots button{width:20px;height:20px;padding:0;border:0;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .dots button::before{content:"";width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35);transition:background .3s}
+  .dots button.on::before{background:var(--gold)}
+  @media (prefers-reduced-motion:reduce){.dst-slide,.dots button::before{transition:none}}
   .chips{display:flex;gap:6px;margin:14px -18px 2px;padding:0 18px;overflow-x:auto;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
   .chip{font:inherit;font-size:13px;border:1px solid var(--accent);background:transparent;color:var(--accent);border-radius:999px;padding:5px 11px 5px 6px;cursor:pointer;flex:none;white-space:nowrap}
   .chip[aria-pressed="true"]{background:var(--accent);color:#fff}
@@ -139,7 +148,7 @@ async function cargar() {
 
 function agrupar(rows, sede) {
   const cats = new Map();
-  rows.forEach(r => {
+  rows.forEach((r, fila) => {
     if (r.sede.toUpperCase() !== sede) return;
     const p = parseInt(String(r.precio).replace(/\D/g, ''), 10);
     if (!p) return;
@@ -149,7 +158,7 @@ function agrupar(rows, sede) {
     const C = cats.get(cat); C.orden = Math.min(C.orden, o);
     const key = r.nombre_menu.toLowerCase();
     if (!C.items.has(key)) C.items.set(key, {
-      nombre: r.nombre_menu, desc: r.descripcion, orden: o,
+      nombre: r.nombre_menu, desc: r.descripcion, orden: o, fila, uid: slug(cat) + '--' + slug(key),
       tags: (r.etiquetas || '').split(',').map(t => t.trim().toUpperCase()).filter(t => ETQ[t]),
       destacado: /^s[ií]$/i.test(r.destacado), precios: []
     });
@@ -187,7 +196,7 @@ function itemHTML(it, tams) {
   } else {
     pr = `<span class="price">${precio(it.precios[0].precio)}</span>`;
   }
-  return `<div class="item"><div class="name">${esc(it.nombre)}` +
+  return `<div class="item" data-uid="${it.uid}"><div class="name">${esc(it.nombre)}` +
     ((it.tags.length || it.desc) ? `<span class="grp">${it.tags.map(icono).join('')}${it.desc ? `<span class="mas" aria-hidden="true">＋</span>` : ''}</span>` : '') + `</div>${pr}` +
     (it.desc ? `<div class="desc">${esc(it.desc)}</div>` : '') +
     `</div>`;
@@ -195,14 +204,16 @@ function itemHTML(it, tams) {
 
 function pintar(cats, sede, aviso) {
   const activos = new Set(); let fijo = null;
-  const dest = cats.filter(c => !c.adic).flatMap(c => c.items).find(i => i.destacado);
+  const dests = cats.filter(c => !c.adic).flatMap(c => c.items).filter(i => i.destacado).sort((a, b) => a.fila - b.fila).slice(0, 4);
   document.title = `Menú · Bakery Bites ${SEDES[sede]}`;
   app.innerHTML =
     `<header><h1>BAKERY BITES</h1><p class="sede">${SEDES[sede]}<a href="./">Cambiar sede</a></p></header>` +
     (aviso ? `<div class="aviso">${esc(aviso)}</div>` : '') +
-    (dest ? `<div class="destacado"><div class="k">Destacado</div><h2>${esc(dest.nombre)}</h2>` +
-      (dest.desc ? `<p>${esc(dest.desc)}</p>` : '') +
-      `<div class="p">${dest.precios.map(p => `<span style="white-space:nowrap">${(p.tamano ? esc(p.tamano) + ' ' : '') + precio(p.precio)}</span>`).join(' · ')}</div></div>` : '') +
+    (dests.length ? `<div class="destacado" role="region" aria-label="Destacados"><div class="dst-track">` +
+      dests.map((d, n) => `<div class="dst-slide${n ? '' : ' on'}" data-uid="${d.uid}"${n ? ' aria-hidden="true"' : ''}><div class="k">Destacado</div><h2>${esc(d.nombre)}</h2>` +
+        (d.desc ? `<p>${esc(d.desc)}</p>` : '') +
+        `<div class="p">${d.precios.map(p => `<span style="white-space:nowrap">${(p.tamano ? esc(p.tamano) + ' ' : '') + precio(p.precio)}</span>`).join(' · ')}</div></div>`).join('') +
+      `</div>${dests.length > 1 ? `<div class="dots">${dests.map((d, n) => `<button class="${n ? '' : 'on'}" data-n="${n}" aria-label="Destacado ${n + 1}"></button>`).join('')}</div>` : ''}</div>` : '') +
     `<div class="chips" role="group" aria-label="Filtros">${Object.entries(ETQ).map(([k, v]) => `<button class="chip" data-t="${k}" aria-pressed="false"><span class="ic">${k}</span>${v}</button>`).join('')}</div>` +
     `<nav><div class="scroll" id="nav"></div></nav><main id="secs"></main>` +
     `<footer>Precios incluyen impoconsumo · K = miles de pesos</footer>`;
@@ -276,6 +287,43 @@ function pintar(cats, sede, aviso) {
   });
   addEventListener('scroll', cerrarTip, { passive: true });
   render();
+  const dst = app.querySelector('.destacado');
+  if (dst) {
+    const slides = dst.querySelectorAll('.dst-slide'), dots = dst.querySelectorAll('.dots button');
+    const quieto = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let cur = 0, tm = null, x0 = null, y0 = 0, swiped = false;
+    const ir = n => {
+      cur = (n + slides.length) % slides.length;
+      slides.forEach((s, k) => { s.classList.toggle('on', k === cur); s.toggleAttribute('aria-hidden', k !== cur); });
+      dots.forEach((d, k) => d.classList.toggle('on', k === cur));
+    };
+    const programar = ms => {
+      clearTimeout(tm);
+      if (slides.length > 1 && !quieto) tm = setTimeout(() => { ir(cur + 1); programar(5000); }, ms);
+    };
+    dst.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; swiped = false; programar(10000); }, { passive: true });
+    dst.addEventListener('touchend', e => {
+      if (x0 == null || slides.length < 2) return;
+      const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) { swiped = true; ir(cur + (dx < 0 ? 1 : -1)); programar(10000); }
+    });
+    dst.addEventListener('click', e => {
+      if (swiped) { swiped = false; return; }
+      programar(10000);
+      const dot = e.target.closest('.dots button');
+      if (dot) { ir(+dot.dataset.n); return; }
+      const uid = slides[cur].dataset.uid;
+      let el = secs.querySelector(`.item[data-uid="${uid}"]`);
+      if (!el && activos.size) {
+        activos.clear(); app.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', 'false')); render();
+        el = secs.querySelector(`.item[data-uid="${uid}"]`);
+      }
+      if (!el) return;
+      el.classList.add('open');
+      el.scrollIntoView({ behavior: quieto ? 'auto' : 'smooth', block: 'center' });
+    });
+    programar(5000);
+  }
 }
 
 (async () => {
