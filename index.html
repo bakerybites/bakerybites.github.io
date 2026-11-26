@@ -61,6 +61,7 @@
   .item+.sizes{margin-top:14px}
   h3.sub{font-family:'Poppins',sans-serif;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:18px 0 4px}
   h2+h3.sub{margin-top:4px}
+  .sizes small{display:block;font-size:10px;font-weight:500;letter-spacing:0;text-transform:none;opacity:.85}
   .adi{display:flex;align-items:baseline;padding:5px 0;font-size:15px}
   .adi .lead{flex:1;min-width:16px;border-bottom:2px dotted var(--line);margin:0 8px;transform:translateY(-4px)}
   .adic h2{font-size:22px}
@@ -96,6 +97,7 @@ const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTp8NAlDAtePXBo
 const SEDES = { SRF: 'San Rafael', SBD: 'Santa Bárbara' };
 const ETQ = { MM: 'Masa madre', SG: 'Sin gluten', SA: 'Sin azúcar' };
 const CACHE_KEY = 'bb_menu_csv';
+const OZ = { Peq: '7 oz', Med: '9 oz', Gr: '12 oz' };
 const app = document.getElementById('app');
 
 function parseCSV(text) {
@@ -206,7 +208,7 @@ function itemHTML(it, tams) {
 }
 
 // Agrupa los productos con tamaños en bloques que comparten tamaños (Peq/Med/Gr aparte de Sencillo/Doble); cada bloque con su encabezado.
-function bloque(items, cmp) {
+function bloque(items, cmp, oz) {
   const conVar = items.filter(i => i.precios.some(p => p.tamano));
   if (!conVar.length) return items.map(i => itemHTML(i, [])).join('');
   const grupos = [];
@@ -222,7 +224,7 @@ function bloque(items, cmp) {
   const unicos = items.filter(i => !conVar.includes(i));
   return grupos.map(g => {
     const tams = [...g.tams].sort(cmp);
-    return `<div class="sizes"><span></span><div class="prices" style="--n:${tams.length}">${tams.map(t => `<span>${esc(t)}</span>`).join('')}</div></div>` +
+    return `<div class="sizes"><span></span><div class="prices" style="--n:${tams.length}">${tams.map(t => `<span>${esc(t)}${oz && oz[t] ? `<small>${oz[t]}</small>` : ''}</span>`).join('')}</div></div>` +
       g.items.map(i => itemHTML(i, tams)).join('');
   }).join('') +
     (unicos.length ? `<div class="sizes unico"><span>Precio único</span></div>` + unicos.map(i => itemHTML(i, [])).join('') : '');
@@ -261,7 +263,7 @@ function pintar(cats, sede, aviso) {
       items.forEach(i => { let g = subs.find(s => s.nombre === i.sub); if (!g) subs.push(g = { nombre: i.sub, items: [] }); g.items.push(i); });
       subs.forEach(g => {
         if (g.nombre) html += `<h3 class="sub">${esc(g.nombre)}</h3>`;
-        html += bloque(g.items, c.cmp);
+        html += bloque(g.items, c.cmp, sede === 'SRF' && c.id === 'c-bebidas-calientes' ? OZ : null);
       });
       html += `</section>`;
     });
