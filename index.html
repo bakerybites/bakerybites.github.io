@@ -58,6 +58,9 @@
   .sizes{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:2px 0 4px;border-bottom:1px solid var(--line)}
   .prices{display:grid;grid-auto-flow:column;grid-template-columns:repeat(var(--n,1),4.6rem);gap:0 6px;text-align:right}
   .sizes.unico{margin-top:14px}
+  .item+.sizes{margin-top:14px}
+  h3.sub{font-family:'Poppins',sans-serif;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:18px 0 4px}
+  h2+h3.sub{margin-top:4px}
   .adi{display:flex;align-items:baseline;padding:5px 0;font-size:15px}
   .adi .lead{flex:1;min-width:16px;border-bottom:2px dotted var(--line);margin:0 8px;transform:translateY(-4px)}
   .adic h2{font-size:22px}
@@ -160,7 +163,7 @@ function agrupar(rows, sede) {
     if (!C.items.has(key)) C.items.set(key, {
       nombre: r.nombre_menu, desc: r.descripcion, orden: o, fila, uid: slug(cat) + '--' + slug(key),
       tags: (r.etiquetas || '').split(',').map(t => t.trim().toUpperCase()).filter(t => ETQ[t]),
-      destacado: /^s[ií]$/i.test(r.destacado), precios: []
+      destacado: /^s[ií]$/i.test(r.destacado), sub: r.subtitulo || '', precios: []
     });
     const it = C.items.get(key); it.orden = Math.min(it.orden, o);
     if (/^s[ií]$/i.test(r.destacado)) it.destacado = true;
@@ -202,6 +205,29 @@ function itemHTML(it, tams) {
     `</div>`;
 }
 
+// Agrupa los productos con tamaños en bloques que comparten tamaños (Peq/Med/Gr aparte de Sencillo/Doble); cada bloque con su encabezado.
+function bloque(items, cmp) {
+  const conVar = items.filter(i => i.precios.some(p => p.tamano));
+  if (!conVar.length) return items.map(i => itemHTML(i, [])).join('');
+  const grupos = [];
+  conVar.forEach(i => {
+    const ts = i.precios.map(p => p.tamano).filter(Boolean);
+    const unidos = grupos.filter(g => ts.some(t => g.tams.has(t)));
+    const g = { items: [i], tams: new Set(ts) };
+    unidos.forEach(u => { u.items.forEach(x => g.items.push(x)); u.tams.forEach(t => g.tams.add(t)); grupos.splice(grupos.indexOf(u), 1); });
+    grupos.push(g);
+  });
+  grupos.forEach(g => g.items.sort((a, b) => items.indexOf(a) - items.indexOf(b)));
+  grupos.sort((a, b) => items.indexOf(a.items[0]) - items.indexOf(b.items[0]));
+  const unicos = items.filter(i => !conVar.includes(i));
+  return grupos.map(g => {
+    const tams = [...g.tams].sort(cmp);
+    return `<div class="sizes"><span></span><div class="prices" style="--n:${tams.length}">${tams.map(t => `<span>${esc(t)}</span>`).join('')}</div></div>` +
+      g.items.map(i => itemHTML(i, tams)).join('');
+  }).join('') +
+    (unicos.length ? `<div class="sizes unico"><span>Precio único</span></div>` + unicos.map(i => itemHTML(i, [])).join('') : '');
+}
+
 function pintar(cats, sede, aviso) {
   const activos = new Set(); let fijo = null;
   const dests = cats.filter(c => !c.adic).flatMap(c => c.items).filter(i => i.destacado).sort((a, b) => a.fila - b.fila).slice(0, 4);
@@ -230,14 +256,14 @@ function pintar(cats, sede, aviso) {
           items.map(i => `<div class="adi"><span>${esc(i.nombre)}</span><span class="lead"></span><span class="price">+${precio(i.precios[0].precio)}</span></div>`).join('') + `</section>`;
         return;
       }
-      const conVar = items.filter(i => i.precios.some(p => p.tamano));
-      const tams = [...new Set(conVar.flatMap(i => i.precios.map(p => p.tamano)).filter(Boolean))].sort(c.cmp);
-      const unicos = tams.length ? items.filter(i => !conVar.includes(i)) : [];
-      html += `<section id="${c.id}"><h2>${esc(c.nombre)}</h2>` +
-        (tams.length ? `<div class="sizes"><span></span><div class="prices" style="--n:${tams.length}">${tams.map(t => `<span>${esc(t)}</span>`).join('')}</div></div>` +
-          conVar.map(i => itemHTML(i, tams)).join('') +
-          (unicos.length ? `<div class="sizes unico"><span>Precio único</span></div>` + unicos.map(i => itemHTML(i, [])).join('') : '')
-        : items.map(i => itemHTML(i, [])).join('')) + `</section>`;
+      html += `<section id="${c.id}"><h2>${esc(c.nombre)}</h2>`;
+      const subs = [];
+      items.forEach(i => { let g = subs.find(s => s.nombre === i.sub); if (!g) subs.push(g = { nombre: i.sub, items: [] }); g.items.push(i); });
+      subs.forEach(g => {
+        if (g.nombre) html += `<h3 class="sub">${esc(g.nombre)}</h3>`;
+        html += bloque(g.items, c.cmp);
+      });
+      html += `</section>`;
     });
     nav.innerHTML = links;
     secs.innerHTML = html || `<p class="vacio">No hay productos con esos filtros.</p>`;
