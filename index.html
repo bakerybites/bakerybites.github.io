@@ -208,9 +208,9 @@ function itemHTML(it, tams) {
 }
 
 // Agrupa los productos con tamaños en bloques que comparten tamaños (Peq/Med/Gr aparte de Sencillo/Doble); cada bloque con su encabezado.
-function bloque(items, cmp, oz) {
+function bloque(items, cmp, oz, cab) {
   const conVar = items.filter(i => i.precios.some(p => p.tamano));
-  if (!conVar.length) return items.map(i => itemHTML(i, [])).join('');
+  if (!conVar.length) return (cab ? `<div class="sizes unico"><span>Precio único</span></div>` : '') + items.map(i => itemHTML(i, [])).join('');
   const grupos = [];
   conVar.forEach(i => {
     const ts = i.precios.map(p => p.tamano).filter(Boolean);
@@ -263,7 +263,7 @@ function pintar(cats, sede, aviso) {
       items.forEach(i => { let g = subs.find(s => s.nombre === i.sub); if (!g) subs.push(g = { nombre: i.sub, items: [] }); g.items.push(i); });
       subs.forEach(g => {
         if (g.nombre) html += `<h3 class="sub">${esc(g.nombre)}</h3>`;
-        html += bloque(g.items, c.cmp, sede === 'SRF' && c.id === 'c-bebidas-calientes' ? OZ : null);
+        html += bloque(g.items, c.cmp, sede === 'SRF' && c.id === 'c-bebidas-calientes' ? OZ : null, subs.length > 1);
       });
       html += `</section>`;
     });
